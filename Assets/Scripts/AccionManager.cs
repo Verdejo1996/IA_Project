@@ -2,18 +2,26 @@ using UnityEngine;
 
 public class AccionManager : MonoBehaviour
 {
-    public void EjecutarAbrirCajon()
+    public void EjecutarAccion(string accionId)
     {
-        GameStateManager.Instance.estado.habitacion.cajon = "abierto";
-        GameStateManager.Instance.estado.jugador.accion_reciente = "abrió el cajón";
-        GameStateManager.Instance.AgregarConocimiento("El jugador ya abrió el cajón.");
-        Debug.Log("Cajón abierto.");
-    }
+        switch (accionId)
+        {
+            case "abrir_cajon":
+                GameStateManager.Instance.estado.habitacion.cajon = "abierto";
+                GameStateManager.Instance.estado.jugador.accion_reciente = "abrió el cajón";
+                GameStateManager.Instance.RegistrarAccionEjecutada("abrir_cajon");
+                break;
 
-    public void EjecutarEncenderLuz()
-    {
-        GameStateManager.Instance.estado.habitacion.luz = "encendida";
-        GameStateManager.Instance.estado.jugador.accion_reciente = "encendió la luz";
+            case "encender_luz":
+                GameStateManager.Instance.estado.habitacion.luz = "encendida";
+                GameStateManager.Instance.estado.jugador.accion_reciente = "encendió la luz";
+                GameStateManager.Instance.RegistrarAccionEjecutada("encender_luz");
+                break;
+
+                // Agregá más acciones aquí...
+        }
+
+        GameStateManager.Instance.SincronizarConocimientos();
+        Debug.Log("Acción ejecutada: " + accionId);
     }
 }
-

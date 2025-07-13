@@ -1,55 +1,53 @@
-using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.Networking;
 using System.Collections;
-using System.Text;
-using TMPro;
 using System.Collections.Generic;
-using Unity.VisualScripting.Antlr3.Runtime;
+using UnityEngine;
+using UnityEngine.Networking;
+using UnityEngine.UI;
+using TMPro;
 
 public class LLMInterface : MonoBehaviour
 {
-    public InputField inputField;       // Campo donde el jugador escribe
-    public TextMeshProUGUI textoRespuesta;         // Texto donde se muestra la respuesta
-    private List<string> historial = new();
+    public InputField inputField;
+    public TextMeshProUGUI textoRespuesta;
+    public Transform contenedorAcciones;
+    public GameObject botonAccionPrefab;
+    public AccionManager accionManager;
+    public LLMConfig config;
 
-    private void Start()
-    {
-        textoRespuesta.text = "IA: Hola, ¿en qué puedo ayudarte?";
-    }
+    private List<string> historial = new List<string>();
 
     public void EnviarPregunta()
     {
-        Debug.Log("Se ejecutó EnviarPregunta()");
         string pregunta = inputField.text;
-        GameStateManager.Instance.SetAccionJugador(pregunta); // Registrar acción
+        if (string.IsNullOrWhiteSpace(pregunta)) return;
 
-        historial.Add("Jugador: " + pregunta);
-
-        string estadoJson = GameStateManager.Instance.GetGameStateAsJson();
-        string historialTexto = string.Join("\n", historial);
+        GameStateManager.Instance.SetAccionJugador(pregunta);
+        GameStateManager.Instance.SincronizarConocimientos();
 
         string conocimientoTexto = GameStateManager.Instance.GetConocimientosTexto();
+        string historialTexto = string.Join("\n", historial);
 
         string prompt = $"Conocimientos sobre el jugador:\n{conocimientoTexto}\n" +
-                        $"Estado actual:\n{estadoJson}\n" +
                         $"Historial:\n{historialTexto}\n" +
                         $"Jugador dijo: {pregunta}\n" +
-                        $"Respondé como un asistente útil.";
+                        $"Respondé como un asistente útil y realista, si proponés acciones usá el formato [ACTION:accion_id] al final.";
 
+        historial.Add("Jugador: " + pregunta);
         StartCoroutine(EnviarAIA(prompt));
     }
 
     IEnumerator EnviarAIA(string prompt)
     {
-        // Usamos una clase para construir el JSON de forma segura
-        LLMRequest requestData = new LLMRequest();
-        requestData.prompt = prompt;
+        var request = new UnityWebRequest("http://localhost:11434/api/generate", "POST");
+        string modeloUsado = config != null ? config.modelo : "mistral";
+        string jsonBody = JsonUtility.ToJson(new LLMRequest
+        {
+            model = modeloUsado,
+            prompt = prompt,
+            stream = false
+        });
 
-        string json = JsonUtility.ToJson(requestData);
-
-        UnityWebRequest request = new UnityWebRequest("http://localhost:11434/api/generate", "POST");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
+        byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonBody);
         request.uploadHandler = new UploadHandlerRaw(bodyRaw);
         request.downloadHandler = new DownloadHandlerBuffer();
         request.SetRequestHeader("Content-Type", "application/json");
@@ -60,26 +58,74 @@ public class LLMInterface : MonoBehaviour
         {
             string responseText = request.downloadHandler.text;
             string parsed = ExtraerRespuesta(responseText);
-            historial.Add("IA: " + parsed);
             textoRespuesta.text = "IA: " + parsed;
+            historial.Add("IA: " + parsed);
+
+            List<AccionSugerida> acciones = DetectarAccionesEn(parsed);
+            MostrarBotonesDeAccion(acciones);
         }
         else
         {
-            textoRespuesta.text = "Error al conectar con la IA.";
-            Debug.LogError("Código HTTP: " + request.responseCode + "\n" + request.downloadHandler.text);
+            Debug.LogError("Error en la solicitud: " + request.error);
         }
     }
 
-    // Extraemos el contenido del campo "response"
-    private string ExtraerRespuesta(string rawJson)
+    string ExtraerRespuesta(string json)
     {
-        int responseIndex = rawJson.IndexOf("\"response\":\"") + 12;
-        int endIndex = rawJson.IndexOf("\"", responseIndex);
-        if (responseIndex < 12 || endIndex < 0 || endIndex <= responseIndex)
-            return "No se pudo leer la respuesta.";
+        var wrapper = JsonUtility.FromJson<RespuestaIA>(json);
+        return wrapper.response.Trim();
+    }
 
-        string result = rawJson.Substring(responseIndex, endIndex - responseIndex);
-        result = result.Replace("\\n", "\n").Replace("\\\"", "\"");
-        return result;
+    List<AccionSugerida> DetectarAccionesEn(string texto)
+    {
+        List<AccionSugerida> acciones = new List<AccionSugerida>();
+        int index = 0;
+        while ((index = texto.IndexOf("[ACTION:", index)) != -1)
+        {
+            int fin = texto.IndexOf("]", index);
+            if (fin != -1)
+            {
+                //string tag = texto.Substring(index + 8, fin - index - 8).Trim();
+                string tag = char.ToUpper(texto.Replace("_", " ")[0]) + texto.Replace("_", " ")[1..];
+                if (!GameStateManager.Instance.AccionYaEjecutada(tag))
+                {
+                    acciones.Add(new AccionSugerida(tag, texto));
+                }
+                index = fin + 1;
+            }
+            else break;
+        }
+        return acciones;
+    }
+
+    void MostrarBotonesDeAccion(List<AccionSugerida> acciones)
+    {
+        foreach (Transform child in contenedorAcciones)
+            Destroy(child.gameObject);
+
+        foreach (var acc in acciones)
+        {
+            var boton = Instantiate(botonAccionPrefab, contenedorAcciones);
+            var tmp = boton.GetComponentInChildren<TMP_Text>();
+            if (tmp != null) tmp.text = acc.texto;
+            else
+            {
+                var legacy = boton.GetComponentInChildren<Text>();
+                if (legacy != null) legacy.text = acc.texto;
+            }
+
+            boton.GetComponent<Button>().onClick.AddListener(() =>
+            {
+                accionManager.EjecutarAccion(acc.accionId);
+                textoRespuesta.text += $"\n(Ejecutaste: {acc.texto})";
+            });
+        }
+    }
+
+    [System.Serializable]
+    public class RespuestaIA
+    {
+        public string response;
     }
 }
+

@@ -27,13 +27,11 @@ public class GameState
 public class GameStateManager : MonoBehaviour
 {
     public static GameStateManager Instance;
-    public List<string> conocimientos = new();
-
     public GameState estado = new GameState();
 
     private void Awake()
     {
-        Instance = this;
+        if (Instance == null) Instance = this;
     }
 
     public string GetGameStateAsJson()
@@ -51,14 +49,49 @@ public class GameStateManager : MonoBehaviour
         if (!estado.jugador.inventario.Contains(item))
             estado.jugador.inventario.Add(item);
     }
-    public void AgregarConocimiento(string info)
+
+    private Dictionary<string, string> conocimientos = new Dictionary<string, string>();
+
+    public void SetConocimiento(string clave, string descripcion)
     {
-        if (!conocimientos.Contains(info))
-            conocimientos.Add(info);
+        conocimientos[clave] = descripcion;
     }
+
+    public bool TieneConocimiento(string clave)
+    {
+        return conocimientos.ContainsKey(clave);
+    }
+
     public string GetConocimientosTexto()
     {
-        return string.Join("\n", conocimientos);
+        return string.Join("\n", conocimientos.Values);
+    }
+
+    public void SincronizarConocimientos()
+    {
+        SetConocimiento("puerta", $"La puerta está {estado.habitacion.puerta}.");
+        SetConocimiento("luz", $"La luz está {estado.habitacion.luz}.");
+        SetConocimiento("cajon", $"El cajón está {estado.habitacion.cajon}.");
+
+        for (int i = 0; i < estado.jugador.inventario.Count; i++)
+        {
+            string item = estado.jugador.inventario[i];
+            SetConocimiento($"item_{item}", $"El jugador tiene una {item}.");
+        }
+
+        if (!string.IsNullOrEmpty(estado.jugador.accion_reciente))
+            SetConocimiento("accion", $"La última acción del jugador fue: {estado.jugador.accion_reciente}.");
+    }
+
+    public HashSet<string> accionesEjecutadas = new HashSet<string>();
+
+    public void RegistrarAccionEjecutada(string accionId)
+    {
+        accionesEjecutadas.Add(accionId);
+    }
+
+    public bool AccionYaEjecutada(string accionId)
+    {
+        return accionesEjecutadas.Contains(accionId);
     }
 }
-
