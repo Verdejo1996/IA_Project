@@ -34,6 +34,17 @@ public class GameStateManager : MonoBehaviour
         if (Instance == null) Instance = this;
     }
 
+    public void CargarConocimientosIniciales()
+    {
+        SetConocimiento("ubicacion", "El jugador está en una habitación cerrada sin ventanas.");
+        SetConocimiento("linterna_funcionalidad", "La linterna sirve para iluminar zonas oscuras.");
+        SetConocimiento("puerta_estado", "La puerta necesita una llave para abrirse.");
+        SetConocimiento("cajon_funcionalidad", "El cajón podría contener objetos útiles.");
+        SetConocimiento("nota_visible", "En la pared hay una nota que no se puede leer sin luz.");
+        SetConocimiento("objetivo", "El objetivo del jugador es salir de la habitación.");
+        SetConocimiento("interruptor_estado", "El interruptor de luz no funciona.");
+        SetConocimiento("recomendacion", "Es recomendable usar la linterna para explorar el entorno.");
+    }
     public string GetGameStateAsJson()
     {
         return JsonUtility.ToJson(estado, true);
@@ -70,13 +81,12 @@ public class GameStateManager : MonoBehaviour
     public void SincronizarConocimientos()
     {
         SetConocimiento("puerta", $"La puerta está {estado.habitacion.puerta}.");
-        SetConocimiento("luz", $"La luz está {estado.habitacion.luz}.");
         SetConocimiento("cajon", $"El cajón está {estado.habitacion.cajon}.");
 
         for (int i = 0; i < estado.jugador.inventario.Count; i++)
         {
             string item = estado.jugador.inventario[i];
-            SetConocimiento($"item_{item}", $"El jugador tiene una {item}.");
+            SetConocimiento($"item_{item}", $"El jugador tiene una {item.Replace("_", " ")}.");
         }
 
         if (!string.IsNullOrEmpty(estado.jugador.accion_reciente))

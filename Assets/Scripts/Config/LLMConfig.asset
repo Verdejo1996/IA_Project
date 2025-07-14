@@ -12,4 +12,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d58fc130c3532dd42be6576fcaf3b274, type: 3}
   m_Name: LLMConfig
   m_EditorClassIdentifier: 
-  modelo: phi
+  modelo: mistral

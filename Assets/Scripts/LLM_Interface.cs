@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
 using TMPro;
+using System.IO;
 
 public class LLMInterface : MonoBehaviour
 {
@@ -16,6 +17,10 @@ public class LLMInterface : MonoBehaviour
 
     private List<string> historial = new List<string>();
 
+    private void Start()
+    {
+        GameStateManager.Instance.CargarConocimientosIniciales();
+    }
     public void EnviarPregunta()
     {
         string pregunta = inputField.text;
@@ -30,44 +35,108 @@ public class LLMInterface : MonoBehaviour
         string prompt = $"Conocimientos sobre el jugador:\n{conocimientoTexto}\n" +
                         $"Historial:\n{historialTexto}\n" +
                         $"Jugador dijo: {pregunta}\n" +
-                        $"Respondé como un asistente útil y realista, si proponés acciones usá el formato [ACTION:accion_id] al final.";
+                        $"Respondé como si estuvieras en una conversación real. Que tu respuesta sea breve. No expliques todo. Si proponés acciones usá el formato [ACTION:accion_id] al final.";
 
         historial.Add("Jugador: " + pregunta);
+        Debug.Log("Mensaje enviado");
         StartCoroutine(EnviarAIA(prompt));
     }
 
     IEnumerator EnviarAIA(string prompt)
     {
-        var request = new UnityWebRequest("http://localhost:11434/api/generate", "POST");
+        /*        var request = new UnityWebRequest("http://localhost:11434/api/generate", "POST");
+                string modeloUsado = config != null ? config.modelo : "mistral";
+                string jsonBody = JsonUtility.ToJson(new LLMRequest
+                {
+                    model = modeloUsado,
+                    prompt = prompt,
+                    stream = false
+                });
+
+                byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonBody);
+                request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                Debug.Log("Mensaje leido");
+                yield return request.SendWebRequest();
+
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    string responseText = request.downloadHandler.text;
+                    string parsed = ExtraerRespuesta(responseText);
+                    textoRespuesta.text = "IA: " + parsed;
+                    historial.Add("IA: " + parsed);
+
+                    List<AccionSugerida> acciones = DetectarAccionesEn(parsed);
+                    MostrarBotonesDeAccion(acciones);
+                }
+                else
+                {
+                    Debug.LogError("Error en la solicitud: " + request.error);
+                }*/
+
         string modeloUsado = config != null ? config.modelo : "mistral";
+
         string jsonBody = JsonUtility.ToJson(new LLMRequest
         {
             model = modeloUsado,
             prompt = prompt,
-            stream = false
+            stream = true
         });
 
+        var request = new UnityWebRequest("http://localhost:11434/api/generate", "POST");
         byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonBody);
         request.uploadHandler = new UploadHandlerRaw(bodyRaw);
         request.downloadHandler = new DownloadHandlerBuffer();
         request.SetRequestHeader("Content-Type", "application/json");
 
-        yield return request.SendWebRequest();
+        // Activamos streaming
+        request.SendWebRequest();
 
-        if (request.result == UnityWebRequest.Result.Success)
-        {
-            string responseText = request.downloadHandler.text;
-            string parsed = ExtraerRespuesta(responseText);
-            textoRespuesta.text = "IA: " + parsed;
-            historial.Add("IA: " + parsed);
+        string respuestaAcumulada = "";
+        string respuestaTotal = "";
+        textoRespuesta.text = "IA: ";
 
-            List<AccionSugerida> acciones = DetectarAccionesEn(parsed);
-            MostrarBotonesDeAccion(acciones);
-        }
-        else
+        while (!request.isDone)
         {
-            Debug.LogError("Error en la solicitud: " + request.error);
+            if (request.downloadHandler != null)
+            {
+                string data = request.downloadHandler.text;
+
+                // Solo leer lo nuevo
+                if (data.Length > respuestaTotal.Length)
+                {
+                    string nuevo = data.Substring(respuestaTotal.Length);
+                    respuestaTotal = data;
+
+                    // Separar por líneas
+                    using (StringReader reader = new StringReader(nuevo))
+                    {
+                        string linea;
+                        while ((linea = reader.ReadLine()) != null)
+                        {
+                            if (!string.IsNullOrWhiteSpace(linea))
+                            {
+                                try
+                                {
+                                    var frag = JsonUtility.FromJson<RespuestaIA>(linea);
+                                    respuestaAcumulada += frag.response;
+                                    textoRespuesta.text += frag.response;                                    
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                }
+            }
+
+            yield return null;
         }
+
+        historial.Add("IA: " + respuestaAcumulada);
+
+        List<AccionSugerida> acciones = DetectarAccionesEn(respuestaAcumulada);
+        MostrarBotonesDeAccion(acciones);
     }
 
     string ExtraerRespuesta(string json)
@@ -85,11 +154,11 @@ public class LLMInterface : MonoBehaviour
             int fin = texto.IndexOf("]", index);
             if (fin != -1)
             {
-                //string tag = texto.Substring(index + 8, fin - index - 8).Trim();
-                string tag = char.ToUpper(texto.Replace("_", " ")[0]) + texto.Replace("_", " ")[1..];
+                string tag = texto.Substring(index + 8, fin - index - 8).Trim();
+                string textoAccion = char.ToUpper(tag.Replace("_", " ")[0]) + tag.Replace("_", " ").Substring(1);
                 if (!GameStateManager.Instance.AccionYaEjecutada(tag))
                 {
-                    acciones.Add(new AccionSugerida(tag, texto));
+                    acciones.Add(new AccionSugerida(tag, textoAccion));
                 }
                 index = fin + 1;
             }
